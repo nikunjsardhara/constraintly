@@ -7,8 +7,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    console.log("[debug] GET /api/sessions/:id - cookie:", request.headers.get("cookie"));
     const session = await auth.api.getSession({ headers: request.headers });
+    console.log("[debug] GET /api/sessions/:id - session:", !!session, session?.user?.id ? `userId=${session.user.id}` : null);
     if (!session || !session.user) {
+      console.log("[debug] GET /api/sessions/:id - unauthorized");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -35,8 +38,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    console.log("[debug] PATCH /api/sessions/:id - cookie:", request.headers.get("cookie"));
     const session = await auth.api.getSession({ headers: request.headers });
+    console.log("[debug] PATCH /api/sessions/:id - session:", !!session, session?.user?.id ? `userId=${session.user.id}` : null);
     if (!session || !session.user) {
+      console.log("[debug] PATCH /api/sessions/:id - unauthorized");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
