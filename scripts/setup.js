@@ -124,6 +124,14 @@ async function setup() {
   }
   log.success('Database migrations completed');
 
+  // Step 5.1: Seed database
+  log.info('Seeding database with default challenges...');
+  if (!exec('node scripts/seed.js')) {
+    log.warn('Seeding failed - you can run node scripts/seed.js manually');
+  } else {
+    log.success('Database seeded');
+  }
+
   // Step 6: Build check
   log.info('\nStep 4: Verifying build...');
   if (!exec('pnpm build')) {

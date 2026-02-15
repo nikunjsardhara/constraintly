@@ -7,61 +7,65 @@ datasource db {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  email         String     @unique
-  emailVerified DateTime?
-  name          String?
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
   image         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions Session[]
+  accounts Account[]
 
   projects  Project[]
   stats     UserStats?
-  accounts  Account[]
-  sessions  Session[]
+  designSessions DesignSession[]
+  challenges Challenge[]
 
-  @@map("users")
-}
-
-model Account {
-  id              String @id @default(cuid())
-  userId          String
-  type            String
-  provider        String
-  providerAccountId String
-  passwordHash    String?
-  expiresAt       Int?
-  createdAt       DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@index([userId])
-  @@map("accounts")
+  @@map("user")
 }
 
 model Session {
   id        String   @id @default(cuid())
-  userId    String
   expiresAt DateTime
+  token     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("session")
+}
 
-  @@index([userId])
-  @@map("sessions")
+model Account {
+  id           String  @id @default(cuid())
+  accountId    String
+  providerId   String
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  password     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([accountId, providerId])
+  @@map("account")
 }
 
 model Verification {
-  id        String   @id @default(cuid())
+  id         String   @id @default(cuid())
   identifier String
-  value     String
-  expiresAt DateTime
-  createdAt DateTime?
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
 
   @@unique([identifier, value])
-  @@map("verifications")
+  @@map("verification")
 }
 
 model Project {
@@ -121,4 +125,46 @@ enum ConstraintType {
   TOOL_LIMITATION
   COLOR_RESTRICTION
   ASSET_RESTRICTION
+}
+
+model Challenge {
+  id               String   @id @default(cuid())
+  title            String
+  description      String?
+  constraints      Json?
+  suggestedFormat  String?
+  suggestedDuration Int?
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@map("challenges")
+}
+
+model DesignSession {
+  id             String   @id @default(cuid())
+  userId         String
+  challengeId    String?
+  challengeTitle String?
+  challengeData  Json?
+  format         String
+  plannedDuration Int?
+  startedAt      DateTime @default(now())
+  endedAt        DateTime?
+  status         DesignSessionStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("design_sessions")
+}
+
+enum DesignSessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
 }
