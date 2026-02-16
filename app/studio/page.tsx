@@ -1,247 +1,325 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Canvas } from "fabric";
+import { Download, Save, X } from "lucide-react";
 
-import { fabric } from "fabric";
+import { FORMAT_SIZES, DEFAULT_COLORS, AUTO_SAVE_INTERVAL } from "@/lib/constants/design";
+import {
+  getConstraints,
+  isTextAllowed,
+  isShapesAllowed,
+  isImagesAllowed,
+  checkViolations,
+} from "@/lib/design/constraints";
+import {
+  createCanvas,
+  disposeCanvas,
+  loadCanvasFromSession,
+  addRectangle,
+  addCircle,
+  addText,
+  addImage,
+  deleteSelectedObject,
+  applyFill,
+  applyStroke,
+  applyStrokeWidth,
+  applyFontFamily,
+  applyFontSize,
+  applyFontStyles,
+  downloadCanvas,
+  getSelectedObjectProperties,
+} from "@/lib/design/canvas";
+import { saveCanvasSession, saveThumbnail, fetchSession } from "@/lib/api/sessions";
 
-const FORMAT_SIZES: Record<string, { width: number; height: number }> = {
-  instagram: { width: 1080, height: 1080 },
-  logo: { width: 800, height: 800 },
-  youtube_thumbnail: { width: 1280, height: 720 },
-  youtube_banner: { width: 2560, height: 1440 },
-  facebook_banner: { width: 820, height: 312 },
-  linkedin_banner: { width: 1584, height: 396 },
-  twitter_post: { width: 1200, height: 675 },
-  presentation: { width: 1920, height: 1080 },
-};
+import {
+  Toolbar,
+  StylePanel,
+  FontPanel,
+  TimerDisplay,
+  ViolationsAlert,
+  ZoomControls,
+} from "@/components/studio";
 
-export default function StudioPage() {
+function StudioContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("sessionId");
   const format = searchParams?.get("format") || "instagram";
+
   const [session, setSession] = useState<any>(null);
   const [violations, setViolations] = useState<string[]>([]);
-  const [fillColor, setFillColor] = useState<string>("#FF5722");
-  const [strokeColor, setStrokeColor] = useState<string>("#000000");
+  const [fillColor, setFillColor] = useState<string>(DEFAULT_COLORS.fill);
+  const [strokeColor, setStrokeColor] = useState<string>(DEFAULT_COLORS.stroke);
+  const [strokeWidth, setStrokeWidth] = useState<number>(1);
+  const [fontFamily, setFontFamily] = useState<string>("Arial");
+  const [fontSize, setFontSize] = useState<number>(36);
+  const [fontStyle, setFontStyle] = useState<{ bold: boolean; italic: boolean; underline: boolean }>({
+    bold: false,
+    italic: false,
+    underline: false,
+  });
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [timerActive, setTimerActive] = useState(false);
+  const [selectedObject, setSelectedObject] = useState<any>(null);
+  const [zoom, setZoom] = useState<number>(1);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [isLocked, setIsLocked] = useState(false);
   const router = useRouter();
+
+  const constraints = getConstraints(session);
+  const showTextTool = isTextAllowed(constraints);
+  const showShapesTool = isShapesAllowed(constraints);
+  const showImageTool = isImagesAllowed(constraints);
+  const isTextSelected = selectedObject?.type?.includes("text");
 
   useEffect(() => {
     if (!sessionId) return;
-    const fetchSession = async () => {
-      try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          setSession(data);
+
+    const loadSession = async () => {
+      const data = await fetchSession(sessionId);
+      if (data) {
+        setSession(data);
+        if (data.plannedDuration) {
+          const started = new Date(data.startedAt).getTime();
+          const endTime = started + data.plannedDuration * 60 * 1000;
+          const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+          setTimeLeft(remaining);
+          setTimerActive(true);
         }
-      } catch (err) {
-        console.error(err);
       }
     };
-    fetchSession();
+    loadSession();
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId) return;
-    const size = FORMAT_SIZES[format] || FORMAT_SIZES["instagram"];
+    if (!timerActive || timeLeft <= 0) return;
 
-    // remove old canvas if exists
-    try {
-      if (fabricRef.current) {
-        fabricRef.current.off();
-        fabricRef.current.dispose && fabricRef.current.dispose();
-        fabricRef.current = null;
-      }
-    } catch (e) {
-      // ignore
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setTimerActive(false);
+          lockCanvas();
+          handleSave(true);
+          alert("Time's up! Your work has been saved automatically.");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timerActive, timeLeft]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const autoSaveInterval = setInterval(() => {
+      handleSave(true);
+    }, AUTO_SAVE_INTERVAL);
+
+    return () => clearInterval(autoSaveInterval);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !session) return;
+
+    const size = FORMAT_SIZES[format] || FORMAT_SIZES.instagram;
+    setCanvasSize({ width: size.width, height: size.height });
+
+    if (fabricRef.current) {
+      disposeCanvas(fabricRef.current);
+      fabricRef.current = null;
     }
 
-    // ensure a canvas element exists
-    const canvasEl = document.getElementById("studio-canvas") as HTMLCanvasElement | null;
-    if (!canvasEl) return;
-    canvasEl.width = size.width;
-    canvasEl.height = size.height;
-
-    const canvas = new fabric.Canvas("studio-canvas", {
-      preserveObjectStacking: true,
-      backgroundColor: "#ffffff",
-      selection: true,
-    });
-
+    const canvas = createCanvas("studio-canvas", size.width, size.height);
     fabricRef.current = canvas;
 
-    // load previous work if present
-    const existingCanvas = session?.challengeData?.canvasData || session?.challengeData?.canvas;
-    if (existingCanvas) {
-      try {
-        canvas.loadFromJSON(existingCanvas, () => {
-          canvas.renderAll();
-          checkViolations();
-        });
-      } catch (e) {
-        console.warn("Failed to load existing canvas", e);
-      }
-    } else {
-      checkViolations();
-    }
+    loadCanvasFromSession(canvas, session, () => {
+      setViolations(checkViolations(canvas, constraints));
+      
+      setTimeout(() => {
+        if (fabricRef.current) {
+          fabricRef.current.setZoom(1);
+          fabricRef.current.renderAll();
+        }
+        handleFitToScreen();
+      }, 100);
+    });
 
-    canvas.on("object:added", checkViolations);
-    canvas.on("object:modified", checkViolations);
-    canvas.on("object:removed", checkViolations);
+    canvas.on("selection:created", (e: any) => handleSelectionChange(e.selected?.[0]));
+    canvas.on("selection:updated", (e: any) => handleSelectionChange(e.selected?.[0]));
+    canvas.on("selection:cleared", () => setSelectedObject(null));
+
+    canvas.on("object:added", () => setViolations(checkViolations(canvas, constraints)));
+    canvas.on("object:modified", () => setViolations(checkViolations(canvas, constraints)));
+    canvas.on("object:removed", () => setViolations(checkViolations(canvas, constraints)));
 
     return () => {
-      canvas.off();
-      canvas.dispose && canvas.dispose();
-      fabricRef.current = null;
+      if (fabricRef.current) {
+        disposeCanvas(fabricRef.current);
+        fabricRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.id, format]);
 
-  function getConstraints(): string[] {
-    return (session?.challengeData?.constraints || session?.challengeData?.constraints || []) as string[];
-  }
-
-  function checkViolations() {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    const constraints = getConstraints();
-    const found: string[] = [];
-
-    // Count shapes
-    const shapeTypes = ["rect", "circle", "ellipse", "triangle", "polygon", "path"];
-    const objects = canvas.getObjects();
-    const shapesCount = objects.filter((o: any) => shapeTypes.includes(o.type)).length;
-
-    for (const c of constraints) {
-      const low = (c || "").toLowerCase();
-
-      // No text
-      if (low.includes("no text") || low.includes("no type") || low.includes("text forbidden")) {
-        const hasText = objects.some((o: any) => (o.type || "").includes("text"));
-        if (hasText) found.push("No text allowed by challenge");
-      }
-
-      // Shapes limit (e.g., "2 shapes max" or "limit to 2 layers")
-      const shapesMatch = c.match(/(\d+)\s*(?:shapes|layers)/i);
-      if (shapesMatch) {
-        const limit = Number(shapesMatch[1]);
-        if (shapesCount > limit) found.push(`Only ${limit} shapes allowed (you have ${shapesCount})`);
-      }
-
-      // Colors limit (e.g., "3 colors only")
-      const colorsMatch = c.match(/(\d+)\s*(?:colors)/i);
-      if (colorsMatch) {
-        const limit = Number(colorsMatch[1]);
-        const colorSet = new Set<string>();
-        objects.forEach((o: any) => {
-          const fill = o.fill;
-          if (typeof fill === "string") colorSet.add(fill);
-          const stroke = o.stroke;
-          if (typeof stroke === "string") colorSet.add(stroke);
-        });
-        if (colorSet.size > limit) found.push(`Only ${limit} colors allowed (you use ${colorSet.size})`);
+  function handleSelectionChange(obj: any) {
+    setSelectedObject(obj);
+    if (obj) {
+      const props = getSelectedObjectProperties(obj);
+      if (props) {
+        setFillColor(props.fill);
+        setStrokeColor(props.stroke);
+        setStrokeWidth(props.strokeWidth);
+        if (props.isText) {
+          setFontFamily(props.fontFamily);
+          setFontSize(props.fontSize);
+          setFontStyle(props.fontStyle);
+        }
       }
     }
-
-    setViolations(found);
   }
 
-  function addRect() {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    const rect = new fabric.Rect({ left: 60, top: 60, width: 180, height: 120, fill: fillColor, stroke: strokeColor, strokeWidth: 1 });
-    canvas.add(rect);
-    canvas.setActiveObject(rect);
-    canvas.requestRenderAll();
-  }
-
-  function addCircle() {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    const circ = new fabric.Circle({ left: 80, top: 80, radius: 60, fill: fillColor, stroke: strokeColor, strokeWidth: 1 });
-    canvas.add(circ);
-    canvas.setActiveObject(circ);
-    canvas.requestRenderAll();
-  }
-
-  function addText() {
-    const constraints = getConstraints();
-    if (constraints.some((c) => (c || "").toLowerCase().includes("no text"))) {
-      alert("This challenge forbids text.");
+  function handleAddRect() {
+    if (!showShapesTool) {
+      alert("Shapes are not allowed in this challenge");
       return;
     }
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const t = new fabric.Textbox("New text", { left: 100, top: 100, width: 300, fontSize: 36, fill: strokeColor });
-    canvas.add(t);
-    canvas.setActiveObject(t);
-    canvas.requestRenderAll();
+    addRectangle(canvas, { fill: fillColor, stroke: strokeColor, strokeWidth });
+    setViolations(checkViolations(canvas, constraints));
   }
 
-  async function addImage() {
+  function handleAddCircle() {
+    if (!showShapesTool) {
+      alert("Shapes are not allowed in this challenge");
+      return;
+    }
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    addCircle(canvas, { fill: fillColor, stroke: strokeColor, strokeWidth });
+    setViolations(checkViolations(canvas, constraints));
+  }
+
+  function handleAddText() {
+    if (!showTextTool) {
+      alert("Text is not allowed in this challenge.");
+      return;
+    }
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    addText(canvas, { fill: fillColor, fontFamily, fontSize, fontStyle });
+    setViolations(checkViolations(canvas, constraints));
+  }
+
+  async function handleAddImage() {
+    if (!showImageTool) {
+      alert("Images are not allowed in this challenge");
+      return;
+    }
     const url = prompt("Image URL");
     if (!url) return;
     const canvas = fabricRef.current;
     if (!canvas) return;
     try {
-      fabric.Image.fromURL(url, (img) => {
-        const maxW = canvas.getWidth() * 0.6;
-        const maxH = canvas.getHeight() * 0.6;
-        const scale = Math.min(maxW / (img.width || maxW), maxH / (img.height || maxH), 1);
-        img.set({ left: 60, top: 60, scaleX: scale, scaleY: scale });
-        canvas.add(img);
-        canvas.setActiveObject(img);
-        canvas.requestRenderAll();
-      }, { crossOrigin: 'anonymous' });
-    } catch (err) {
-      console.error('Failed to load image', err);
-      alert('Failed to load image');
+      await addImage(canvas, url);
+      setViolations(checkViolations(canvas, constraints));
+    } catch {
+      alert("Failed to load image");
     }
   }
 
-  async function saveCanvas() {
+  function handleDelete() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    deleteSelectedObject(canvas);
+    setSelectedObject(null);
+    setViolations(checkViolations(canvas, constraints));
+  }
+
+  function handleFillChange(color: string) {
+    setFillColor(color);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyFill(canvas, color);
+    setViolations(checkViolations(canvas, constraints));
+  }
+
+  function handleStrokeChange(color: string) {
+    setStrokeColor(color);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyStroke(canvas, color);
+    setViolations(checkViolations(canvas, constraints));
+  }
+
+  function handleStrokeWidthChange(width: number) {
+    setStrokeWidth(width);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyStrokeWidth(canvas, width);
+  }
+
+  function handleFontFamilyChange(font: string) {
+    setFontFamily(font);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyFontFamily(canvas, font);
+  }
+
+  function handleFontSizeChange(size: number) {
+    setFontSize(size);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyFontSize(canvas, size);
+  }
+
+  function handleFontStyleChange(styleType: "bold" | "italic" | "underline") {
+    const newStyle = { ...fontStyle };
+    newStyle[styleType] = !newStyle[styleType];
+    setFontStyle(newStyle);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    applyFontStyles(canvas, newStyle);
+  }
+
+  async function handleSave(auto = false) {
+    const canvas = fabricRef.current;
+    if (!canvas || !sessionId) return;
+    setIsSaving(true);
+    const canvasData = canvas.toJSON();
+    await saveCanvasSession({ sessionId, canvasData, auto });
+    setIsSaving(false);
+  }
+
+  async function handleEndSession() {
     const canvas = fabricRef.current;
     if (!canvas || !sessionId) return;
     try {
       setIsSaving(true);
-      const json = canvas.toJSON();
-      const res = await fetch(`/api/sessions/${sessionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ canvasData: json }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => null);
-        alert("Save failed: " + (text || res.status));
-      } else {
-        alert("Canvas saved");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Save error");
-    } finally {
-      setIsSaving(false);
-    }
-  }
+      lockCanvas();
+      const canvasData = canvas.toJSON();
+      const thumbnailPath = await saveThumbnail(sessionId, canvas);
 
-  async function endSessionWithSave() {
-    const canvas = fabricRef.current;
-    if (!canvas || !sessionId) return;
-    try {
-      setIsSaving(true);
-      const json = canvas.toJSON();
       await fetch(`/api/sessions/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ canvasData: json, status: "COMPLETED", endedAt: new Date().toISOString() }),
+        body: JSON.stringify({
+          canvasData,
+          status: "COMPLETED",
+          endedAt: new Date().toISOString(),
+          thumbnail: thumbnailPath,
+        }),
       });
     } catch (err) {
       console.error(err);
@@ -251,87 +329,158 @@ export default function StudioPage() {
     }
   }
 
+  function handleDownload() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    downloadCanvas(canvas, session?.challengeTitle || "design");
+  }
+
+  function lockCanvas() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    canvas.isDrawingMode = false;
+    canvas.selection = false;
+    canvas.forEachObject((obj: any) => {
+      obj.selectable = false;
+      obj.evented = false;
+    });
+    canvas.renderAll();
+    setIsLocked(true);
+  }
+
+  function handleZoomIn() {
+    setZoom((prev) => Math.min(prev + 0.25, 3));
+  }
+
+  function handleZoomOut() {
+    setZoom((prev) => Math.max(prev - 0.25, 0.25));
+  }
+
+  function handleFitToScreen() {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const containerWidth = container.clientWidth - 40;
+    const containerHeight = container.clientHeight - 40;
+    
+    const scaleX = containerWidth / canvasSize.width;
+    const scaleY = containerHeight / canvasSize.height;
+    const newZoom = Math.min(scaleX, scaleY, 1);
+    
+    setZoom(newZoom);
+  }
+
+  function handleResetZoom() {
+    setZoom(1);
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black py-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-zinc-50 dark:bg-black py-4">
+      <div className="max-w-[98vw] mx-auto px-4">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Studio</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Studio</h1>
+            <TimerDisplay timeLeft={timeLeft} />
+          </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={saveCanvas} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</Button>
-            <Button variant="destructive" onClick={endSessionWithSave}>End Session</Button>
+            <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving}>
+              <Save className="w-4 h-4 mr-2" />
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+            <Button variant="destructive" onClick={handleEndSession}>
+              <X className="w-4 h-4 mr-2" />
+              End Session
+            </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-6">
-          <aside className="col-span-3">
-            <Card className="p-4 mb-4">
-              <div className="text-sm text-zinc-600 mb-2">Session</div>
-              <div className="text-lg font-semibold text-zinc-900 dark:text-white">{session?.challengeTitle || 'Untitled'}</div>
-              <div className="text-xs text-zinc-500 mt-1">{format}</div>
+        <div className="flex flex-col gap-4">
+          <Card className="p-2">
+            <div className="flex items-center gap-4 flex-wrap">
+              <Toolbar
+                showShapesTool={showShapesTool}
+                showTextTool={showTextTool}
+                showImageTool={showImageTool}
+                selectedObject={selectedObject}
+                isLocked={isLocked}
+                onAddRect={handleAddRect}
+                onAddCircle={handleAddCircle}
+                onAddText={handleAddText}
+                onAddImage={handleAddImage}
+                onDelete={handleDelete}
+              />
 
-              <div className="mt-4">
-                <div className="text-sm font-medium">Constraints</div>
-                <ul className="mt-2 space-y-1 text-sm text-zinc-700 dark:text-zinc-200">
-                  {getConstraints().map((c, i) => (
-                    <li key={i}>• {c}</li>
-                  ))}
-                </ul>
+              <StylePanel
+                selectedObject={selectedObject}
+                isLocked={isLocked}
+                fillColor={fillColor}
+                strokeColor={strokeColor}
+                strokeWidth={strokeWidth}
+                onFillChange={handleFillChange}
+                onStrokeChange={handleStrokeChange}
+                onStrokeWidthChange={handleStrokeWidthChange}
+              />
 
-                <div className="mt-4">
-                  <div className="text-sm font-medium">Colors</div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <input type="color" value={fillColor} onChange={(e) => setFillColor(e.target.value)} />
-                    <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} />
-                  </div>
-                </div>
+              {showTextTool && (
+                <FontPanel
+                  isTextSelected={isTextSelected}
+                  isLocked={isLocked}
+                  fontFamily={fontFamily}
+                  fontSize={fontSize}
+                  fontStyle={fontStyle}
+                  onFontFamilyChange={handleFontFamilyChange}
+                  onFontSizeChange={handleFontSizeChange}
+                  onFontStyleChange={handleFontStyleChange}
+                />
+              )}
 
-                <div className="mt-4">
-                  <div className="text-sm font-medium">Tools</div>
-                  <div className="mt-2 flex flex-col gap-2">
-                    <Button onClick={addRect}>Add Rectangle</Button>
-                    <Button onClick={addCircle}>Add Circle</Button>
-                    <Button onClick={addText}>Add Text</Button>
-                    <Button onClick={addImage}>Add Image (URL)</Button>
-                  </div>
-                </div>
+              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-600 mx-1" />
 
-                {violations.length > 0 && (
-                  <div className="mt-4 p-3 bg-red-50 text-red-700 rounded">
-                    <div className="font-semibold">Constraint violations</div>
-                    <ul className="text-sm mt-2">
-                      {violations.map((v, i) => (
-                        <li key={i}>{v}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </Card>
+              <Button variant="outline" size="sm" onClick={handleDownload}>
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
 
-            <Card className="p-4">
-              <div className="text-sm font-medium mb-2">Save & Export</div>
-              <div className="flex flex-col gap-2">
-                <Button onClick={saveCanvas}>Save progress</Button>
-                <Button onClick={() => {
-                  const c = fabricRef.current;
-                  if (!c) return;
-                  const data = c.toDataURL({ format: 'png', multiplier: 1 });
-                  const a = document.createElement('a');
-                  a.href = data;
-                  a.download = `${session?.challengeTitle || 'design'}.png`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                }}>Download PNG</Button>
-              </div>
-            </Card>
-          </aside>
+              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-600 mx-1" />
 
-          <main className="col-span-9">
-            <Card className="p-4">
-              <div className="border rounded-md overflow-hidden">
-                <div className="w-full overflow-auto" style={{ maxHeight: '80vh' }}>
-                  <canvas id="studio-canvas" ref={canvasRef} className="w-full" />
+              <ZoomControls
+                zoom={zoom}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onFitToScreen={handleFitToScreen}
+                onResetZoom={handleResetZoom}
+              />
+
+              <span className="text-xs text-zinc-500 ml-2">
+                {canvasSize.width} × {canvasSize.height}
+              </span>
+            </div>
+          </Card>
+
+          <ViolationsAlert violations={violations} />
+
+          <main>
+            <Card className="p-1">
+              <div 
+                ref={containerRef}
+                className="border border-zinc-200 dark:border-zinc-700 rounded-md overflow-auto bg-zinc-50 dark:bg-zinc-900 relative"
+                style={{ height: "calc(100vh - 220px)", minHeight: "400px" }}
+              >
+                <div 
+                  className="bg-white shadow-xl relative"
+                  style={{ 
+                    width: canvasSize.width * zoom, 
+                    height: canvasSize.height * zoom,
+                    transformOrigin: 'top left',
+                  }}
+                >
+                  <canvas id="studio-canvas" ref={canvasRef} style={{ width: canvasSize.width, height: canvasSize.height }} />
+                  {isLocked && (
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <span className="bg-zinc-900 text-white px-4 py-2 rounded-lg font-semibold text-sm">
+                        Session Ended
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
@@ -339,5 +488,13 @@ export default function StudioPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function StudioPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <StudioContent />
+    </Suspense>
   );
 }

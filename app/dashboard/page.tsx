@@ -23,35 +23,37 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Flame, Trophy, Target, Clock, Star, Award } from "lucide-react";
+
+interface UserStats {
+  currentStreak: number;
+  longestStreak: number;
+  weeklyStreak: number;
+  totalChallenges: number;
+  totalProjects: number;
+  lastActivityDate: string;
+}
+
+interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+}
 
 export default function Dashboard() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<any>(null);
+  const { data: session, isPending } = authClient.useSession();
 
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const sessionData = await authClient.getSession();
-        if (!sessionData) {
-          router.push("/auth/signin");
-        } else {
-          setSession(sessionData);
-        }
-      } catch (error) {
-        router.push("/auth/signin");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkSession();
-  }, [router]);
-
-  const handleSignOut = async () => {
-    await authClient.signOut();
-    router.push("/");
-  };
+  const [challenges, setChallenges] = useState<any[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [activeChallenge, setActiveChallenge] = useState<any>(null);
+  const [selectedFormat, setSelectedFormat] = useState<string>("instagram");
+  const [duration, setDuration] = useState<number>(20);
+  const [designStarted, setDesignStarted] = useState(false);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   const formats = [
     { value: "instagram", label: "Instagram Post (1080x1080)" },
@@ -75,7 +77,11 @@ export default function Dashboard() {
     },
   ];
 
-  const [challenges, setChallenges] = useState<any[]>(initialChallenges);
+  useEffect(() => {
+    if (!isPending && !session) {
+      router.push("/auth/signin");
+    }
+  }, [session, isPending, router]);
 
   useEffect(() => {
     const load = async () => {
@@ -84,18 +90,53 @@ export default function Dashboard() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) setChallenges(data);
+          else setChallenges(initialChallenges);
+        } else {
+          setChallenges(initialChallenges);
         }
       } catch (err) {
         console.error('Error loading challenges', err);
+        setChallenges(initialChallenges);
       }
     };
     load();
   }, []);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [activeChallenge, setActiveChallenge] = useState<any>(null);
-  const [selectedFormat, setSelectedFormat] = useState<string>("instagram");
-  const [duration, setDuration] = useState<number>(20);
-  const [designStarted, setDesignStarted] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const loadStats = async () => {
+      try {
+        const res = await fetch('/api/users/stats', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setUserStats(data.stats);
+          setBadges(data.badges || []);
+        }
+      } catch (err) {
+        console.error('Error loading stats', err);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+    loadStats();
+  }, [session?.user]);
+
+  if (isPending) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-zinc-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    router.push("/");
+  };
 
   const openChallenge = (c: any) => {
     setActiveChallenge(c);
@@ -155,14 +196,6 @@ export default function Dashboard() {
     openChallenge(newChallenge);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-zinc-600">Loading...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <nav className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
@@ -196,6 +229,79 @@ export default function Dashboard() {
             <Button variant="ghost" onClick={() => router.push("/explore")}>Explore</Button>
           </div>
         </div>
+
+        {!loadingStats && userStats && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4">Your Progress</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-950/30 dark:to-red-950/30 border-orange-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/50">
+                    <Flame className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-white">{userStats.currentStreak}</div>
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">Day Streak</div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border-amber-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                    <Trophy className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-white">{userStats.longestStreak}</div>
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">Best Streak</div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                    <Target className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-white">{userStats.totalChallenges}</div>
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">Challenges</div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/50">
+                    <Clock className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-white">{userStats.weeklyStreak}</div>
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">This Week</div>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {badges.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Your Badges</h4>
+                <div className="flex flex-wrap gap-2">
+                  {badges.map((badge) => (
+                    <div
+                      key={badge.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700"
+                      title={badge.description}
+                    >
+                      <span>{badge.icon}</span>
+                      <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{badge.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-3 gap-6">
           {challenges.map((c) => (

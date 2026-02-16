@@ -21,11 +21,13 @@ export default function SignIn() {
     setLoading(true);
 
     try {
-      await authClient.signIn.email({
+      const result = await authClient.signIn.email({
         email,
         password,
       });
-      router.push("/dashboard");
+      if (result) {
+        router.push("/dashboard");
+      }
     } catch (err: any) {
       setError(err.message || "Sign in failed");
     } finally {

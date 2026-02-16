@@ -22,6 +22,9 @@ model User {
   stats     UserStats?
   designSessions DesignSession[]
   challenges Challenge[]
+  reactions Reaction[]
+  badges    UserBadge[]
+  comments  Comment[]
 
   @@map("user")
 }
@@ -105,8 +108,12 @@ model UserStats {
   userId          String     @unique
   currentStreak   Int        @default(0)
   longestStreak   Int        @default(0)
+  weeklyStreak    Int        @default(0)
   totalProjects   Int        @default(0)
+  totalChallenges Int        @default(0)
   lastActivityDate DateTime  @default(now())
+  lastWeekStart   DateTime?
+  personalBests   Json?
   updatedAt       DateTime   @updatedAt
 
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -154,12 +161,19 @@ model DesignSession {
   startedAt      DateTime @default(now())
   endedAt        DateTime?
   status         DesignSessionStatus @default(ACTIVE)
+  thumbnail      String?
+  tags           String?
+  isWinner       Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions Reaction[]
+  comments Comment[]
 
   @@index([userId])
+  @@index([status])
+  @@index([endedAt])
   @@map("design_sessions")
 }
 
@@ -167,4 +181,82 @@ enum DesignSessionStatus {
   ACTIVE
   COMPLETED
   ABANDONED
+}
+
+model Reaction {
+  id           String   @id @default(cuid())
+  sessionId    String
+  userId       String
+  emoji        String
+  createdAt    DateTime @default(now())
+
+  session      DesignSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId, emoji])
+  @@index([sessionId])
+  @@index([userId])
+  @@map("reactions")
+}
+
+model Badge {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  icon        String
+  criteria    String
+  createdAt   DateTime @default(now())
+
+  users       UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id         String   @id @default(cuid())
+  userId     String
+  badgeId    String
+  awardedAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@map("user_badges")
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  sessionId  String
+  userId     String
+  parentId   String?
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session    DesignSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent     Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[]     @relation("CommentReplies")
+
+  @@index([sessionId])
+  @@index([userId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model WeeklyStats {
+  id              String   @id @default(cuid())
+  userId          String
+  weekStart       DateTime
+  challengesCompleted Int @default(0)
+  totalTimeMinutes Int    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@index([weekStart])
+  @@map("weekly_stats")
 }
