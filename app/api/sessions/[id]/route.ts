@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 function getWeekStart(date: Date): Date {
@@ -13,7 +14,9 @@ function getWeekStart(date: Date): Date {
 
 async function checkAndAwardBadges(userId: string, stats: any) {
   const badges = await prisma.badge.findMany();
-  const userBadges = await prisma.userBadge.findMany({
+
+  type UserBadgeType = Prisma.UserBadgeGetPayload<{}>;
+  const userBadges: UserBadgeType[] = await prisma.userBadge.findMany({
     where: { userId },
   });
   const earnedBadgeIds = new Set(userBadges.map((b) => b.badgeId));

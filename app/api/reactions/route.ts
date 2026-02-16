@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -11,7 +12,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "sessionId required" }, { status: 400 });
     }
 
-    const reactions = await prisma.reaction.findMany({
+    type ReactionWithUser = Prisma.ReactionGetPayload<{
+      include: { user: { select: { id: true; name: true; image: true } } };
+    }>;
+
+    const reactions: ReactionWithUser[] = await prisma.reaction.findMany({
       where: { sessionId },
       include: { user: { select: { id: true, name: true, image: true } } },
     });

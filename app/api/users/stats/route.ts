@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -19,7 +20,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const badges = await prisma.userBadge.findMany({
+    type UserBadgeWithBadge = Prisma.UserBadgeGetPayload<{
+      include: { badge: true };
+    }>;
+
+    const badges: UserBadgeWithBadge[] = await prisma.userBadge.findMany({
       where: { userId: session.user.id },
       include: { badge: true },
     });
