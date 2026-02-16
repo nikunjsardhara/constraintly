@@ -22,7 +22,27 @@ export const FONTS = [
   "Palatino Linotype",
 ] as const;
 
-export const SHAPE_TYPES = ["rect", "circle", "ellipse", "triangle", "polygon", "path"] as const;
+export const SHAPE_TYPES = ["rect", "circle", "ellipse", "triangle", "polygon", "line"] as const;
+
+export type ShapeType = typeof SHAPE_TYPES[number];
+
+export const SHAPE_DEFINITIONS: Record<ShapeType, { label: string; fabricType: string }> = {
+  rect: { label: "Rectangle", fabricType: "rect" },
+  circle: { label: "Circle", fabricType: "circle" },
+  ellipse: { label: "Ellipse", fabricType: "ellipse" },
+  triangle: { label: "Triangle", fabricType: "triangle" },
+  polygon: { label: "Polygon", fabricType: "polygon" },
+  line: { label: "Line", fabricType: "line" },
+};
+
+export const FORBIDDEN_SHAPE_OPTIONS = [
+  { value: "rect", label: "Rectangle" },
+  { value: "circle", label: "Circle" },
+  { value: "ellipse", label: "Ellipse" },
+  { value: "triangle", label: "Triangle" },
+  { value: "polygon", label: "Polygon" },
+  { value: "line", label: "Line" },
+];
 
 export const DEFAULT_COLORS = {
   fill: "#FF5722",

@@ -7,12 +7,14 @@ import { Card } from "@/components/ui/card";
 import { Canvas } from "fabric";
 import { Download, Save, X } from "lucide-react";
 
-import { FORMAT_SIZES, DEFAULT_COLORS, AUTO_SAVE_INTERVAL } from "@/lib/constants/design";
+import { FORMAT_SIZES, DEFAULT_COLORS, AUTO_SAVE_INTERVAL, ShapeType } from "@/lib/constants/design";
 import {
   getConstraints,
   isTextAllowed,
   isShapesAllowed,
   isImagesAllowed,
+  isShapeAllowed,
+  getForbiddenShapes,
   checkViolations,
 } from "@/lib/design/constraints";
 import {
@@ -21,6 +23,10 @@ import {
   loadCanvasFromSession,
   addRectangle,
   addCircle,
+  addTriangle,
+  addEllipse,
+  addPolygon,
+  addLine,
   addText,
   addImage,
   deleteSelectedObject,
@@ -78,6 +84,7 @@ function StudioContent() {
   const showTextTool = isTextAllowed(constraints);
   const showShapesTool = isShapesAllowed(constraints);
   const showImageTool = isImagesAllowed(constraints);
+  const forbiddenShapes = getForbiddenShapes(constraints);
   const isTextSelected = selectedObject?.type?.includes("text");
 
   useEffect(() => {
@@ -188,25 +195,41 @@ function StudioContent() {
     }
   }
 
-  function handleAddRect() {
+  function handleAddShape(shapeType: ShapeType) {
     if (!showShapesTool) {
       alert("Shapes are not allowed in this challenge");
       return;
     }
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    addRectangle(canvas, { fill: fillColor, stroke: strokeColor, strokeWidth });
-    setViolations(checkViolations(canvas, constraints));
-  }
-
-  function handleAddCircle() {
-    if (!showShapesTool) {
-      alert("Shapes are not allowed in this challenge");
+    if (!isShapeAllowed(constraints, shapeType)) {
+      alert(`${shapeType} is not allowed in this challenge`);
       return;
     }
     const canvas = fabricRef.current;
     if (!canvas) return;
-    addCircle(canvas, { fill: fillColor, stroke: strokeColor, strokeWidth });
+    
+    const options = { fill: fillColor, stroke: strokeColor, strokeWidth };
+    
+    switch (shapeType) {
+      case "rect":
+        addRectangle(canvas, options);
+        break;
+      case "circle":
+        addCircle(canvas, options);
+        break;
+      case "triangle":
+        addTriangle(canvas, options);
+        break;
+      case "ellipse":
+        addEllipse(canvas, options);
+        break;
+      case "polygon":
+        addPolygon(canvas, options);
+        break;
+      case "line":
+        addLine(canvas, { stroke: strokeColor, strokeWidth });
+        break;
+    }
+    
     setViolations(checkViolations(canvas, constraints));
   }
 
@@ -378,7 +401,16 @@ function StudioContent() {
       <div className="max-w-[98vw] mx-auto px-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Studio</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
+                {session?.challengeTitle || "Studio"}
+              </h1>
+              {session?.challengeData?.description && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  {session.challengeData.description}
+                </p>
+              )}
+            </div>
             <TimerDisplay timeLeft={timeLeft} />
           </div>
           <div className="flex gap-2">
@@ -402,8 +434,8 @@ function StudioContent() {
                 showImageTool={showImageTool}
                 selectedObject={selectedObject}
                 isLocked={isLocked}
-                onAddRect={handleAddRect}
-                onAddCircle={handleAddCircle}
+                forbiddenShapes={forbiddenShapes}
+                onAddShape={handleAddShape}
                 onAddText={handleAddText}
                 onAddImage={handleAddImage}
                 onDelete={handleDelete}

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const tag = searchParams.get("tag");
     const limit = parseInt(searchParams.get("limit") || "40");
 
-    let orderBy: any = { endedAt: "desc" };
+    let orderBy: Record<string, unknown> = { endedAt: "desc" };
 
     if (filter === "trending") {
       orderBy = {
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const where: any = {
+    const where: Record<string, unknown> = {
       status: "COMPLETED",
       endedAt: { not: null },
     };
@@ -38,13 +38,15 @@ export async function GET(request: NextRequest) {
     });
 
     const data = sessions.map((s) => {
-      const reactionCounts = s.reactions.reduce((acc, r) => {
-        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
+      const reactionCounts: Record<string, number> = {};
+      for (const r of s.reactions) {
+        reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1;
+      }
 
-      const challengeData = s.challengeData as Record<string, any> || {};
-      const constraints = challengeData.constraints || [];
+      const challengeData = (s.challengeData as Record<string, unknown>) || {};
+      const constraints = (challengeData.constraints as string[]) || [];
+
+      const sessionAny = s as Record<string, unknown>;
 
       return {
         id: s.id,
@@ -52,10 +54,10 @@ export async function GET(request: NextRequest) {
         thumbnail: s.thumbnail,
         user: s.user ? { id: s.user.id, name: s.user.name, image: s.user.image } : null,
         endedAt: s.endedAt,
-        tags: s.tags,
-        isWinner: s.isWinner,
+        tags: sessionAny.tags as string | null,
+        isWinner: sessionAny.isWinner as boolean,
         format: s.format,
-        constraints: constraints,
+        constraints,
         reactionCounts,
         totalReactions: s.reactions.length,
       };

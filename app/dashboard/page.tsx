@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Flame, Trophy, Target, Clock, Star, Award } from "lucide-react";
+import { Constraint } from "@/lib/constants/constraints";
+import { getConstraintSummary } from "@/lib/design/constraints";
 
 interface UserStats {
   currentStreak: number;
@@ -71,7 +73,11 @@ export default function Dashboard() {
       id: "c1",
       title: "Minimalist Logo",
       description: "Design a simple, memorable logo using two shapes and one accent color.",
-      constraints: ["2 shapes max", "1 accent color", "No text"],
+      constraints: [
+        { type: "MAX_SHAPES", value: 2, description: "Maximum 2 shapes" },
+        { type: "MAX_COLORS", value: 1, description: "Max 1 color" },
+        { type: "FORBIDDEN_TOOLS", value: ["text"], description: "No text" },
+      ] as Constraint[],
       suggestedFormat: "logo",
       suggestedDuration: 20,
     },
@@ -181,16 +187,27 @@ export default function Dashboard() {
 
   const createRandomChallenge = () => {
     const random = Math.random().toString(36).slice(2, 7);
+    const constraintSets: Constraint[][] = [
+      [
+        { type: "MAX_SHAPES", value: 3, description: "Max 3 shapes" },
+        { type: "MAX_COLORS", value: 2, description: "Max 2 colors" },
+      ],
+      [
+        { type: "FORBIDDEN_TOOLS", value: ["text"], description: "No text" },
+        { type: "MAX_SHAPES", value: 5, description: "Max 5 shapes" },
+      ],
+      [
+        { type: "MAX_COLORS", value: 3, description: "Max 3 colors" },
+        { type: "MIN_FONT_SIZE", value: 24, description: "Min font 24px" },
+      ],
+    ];
     const newChallenge = {
       id: `rnd-${random}`,
       title: `Random Challenge ${random}`,
       description: "Generated constraints to spark originality.",
-      constraints: [
-        ["Use only geometric shapes", "No gradients", "One accent color"][Math.floor(Math.random()*3)],
-        ["Limit to 2 layers", "No text", "Use only one font"][Math.floor(Math.random()*3)]
-      ],
-      suggestedFormat: formats[Math.floor(Math.random()*formats.length)].value,
-      suggestedDuration: [10,15,20,30][Math.floor(Math.random()*4)],
+      constraints: constraintSets[Math.floor(Math.random() * constraintSets.length)],
+      suggestedFormat: formats[Math.floor(Math.random() * formats.length)].value,
+      suggestedDuration: [10, 15, 20, 30][Math.floor(Math.random() * 4)],
     };
     setChallenges([newChallenge, ...challenges]);
     openChallenge(newChallenge);
@@ -226,6 +243,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <Button onClick={createRandomChallenge}>Start Random Challenge</Button>
+            <Button variant="outline" onClick={() => router.push("/my-designs")}>My Designs</Button>
             <Button variant="ghost" onClick={() => router.push("/explore")}>Explore</Button>
           </div>
         </div>
@@ -312,9 +330,13 @@ export default function Dashboard() {
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2">{c.description}</p>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {c.constraints?.slice(0,3).map((con: string, idx: number) => (
-                      <span key={idx} className="text-xs px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200">{con}</span>
-                    ))}
+                    {(() => {
+                      const constraints = c.constraints as Constraint[] | undefined;
+                      const summaries = constraints ? getConstraintSummary(constraints) : [];
+                      return summaries.slice(0, 3).map((con: string, idx: number) => (
+                        <span key={idx} className="text-xs px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200">{con}</span>
+                      ));
+                    })()}
                   </div>
                 </div>
 
@@ -364,9 +386,14 @@ export default function Dashboard() {
               <div>
                 <Label>Constraints</Label>
                 <div className="mt-2 space-y-2">
-                  {activeChallenge?.constraints?.map((con: string, idx: number) => (
-                    <div key={idx} className="text-sm text-zinc-700 dark:text-zinc-200">{con}</div>
-                  ))}
+                  {(() => {
+                    const constraints = activeChallenge?.constraints as Constraint[] | undefined;
+                    if (!constraints) return null;
+                    const summaries = getConstraintSummary(constraints);
+                    return summaries.map((con: string, idx: number) => (
+                      <div key={idx} className="text-sm text-zinc-700 dark:text-zinc-200">{con}</div>
+                    ));
+                  })()}
                 </div>
               </div>
             </div>

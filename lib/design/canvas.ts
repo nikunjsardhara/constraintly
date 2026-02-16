@@ -1,4 +1,4 @@
-import { Canvas, Rect, Circle, Textbox, FabricImage } from "fabric";
+import { Canvas, Rect, Circle, Ellipse, Triangle, Polygon, Line, Textbox, FabricImage, FabricObject } from "fabric";
 
 export function createCanvas(canvasId: string, width: number, height: number): Canvas {
   const canvasEl = document.getElementById(canvasId) as HTMLCanvasElement | null;
@@ -71,6 +71,81 @@ export function addCircle(
   });
   canvas.add(circ);
   canvas.setActiveObject(circ);
+  canvas.requestRenderAll();
+}
+
+export function addTriangle(
+  canvas: Canvas,
+  options: { fill: string; stroke: string; strokeWidth: number }
+): void {
+  const triangle = new Triangle({
+    left: 80,
+    top: 80,
+    width: 120,
+    height: 100,
+    ...options,
+  });
+  canvas.add(triangle);
+  canvas.setActiveObject(triangle);
+  canvas.requestRenderAll();
+}
+
+export function addEllipse(
+  canvas: Canvas,
+  options: { fill: string; stroke: string; strokeWidth: number }
+): void {
+  const ellipse = new Ellipse({
+    left: 80,
+    top: 80,
+    rx: 80,
+    ry: 50,
+    ...options,
+  });
+  canvas.add(ellipse);
+  canvas.setActiveObject(ellipse);
+  canvas.requestRenderAll();
+}
+
+export function addPolygon(
+  canvas: Canvas,
+  options: { fill: string; stroke: string; strokeWidth: number; sides?: number }
+): void {
+  const sides = options.sides || 5;
+  const radius = 60;
+  const points = [];
+  
+  for (let i = 0; i < sides; i++) {
+    const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
+    points.push({
+      x: radius * Math.cos(angle),
+      y: radius * Math.sin(angle),
+    });
+  }
+
+  const polygon = new Polygon(points, {
+    left: 80,
+    top: 80,
+    fill: options.fill,
+    stroke: options.stroke,
+    strokeWidth: options.strokeWidth,
+  } as any);
+  canvas.add(polygon);
+  canvas.setActiveObject(polygon);
+  canvas.requestRenderAll();
+}
+
+export function addLine(
+  canvas: Canvas,
+  options: { stroke: string; strokeWidth: number }
+): void {
+  const line = new Line([60, 60, 200, 60], {
+    left: 60,
+    top: 60,
+    stroke: options.stroke,
+    strokeWidth: options.strokeWidth,
+  } as any);
+  canvas.add(line);
+  canvas.setActiveObject(line);
   canvas.requestRenderAll();
 }
 

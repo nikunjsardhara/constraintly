@@ -1,5 +1,6 @@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Square, Circle as CircleIcon, Type, ImageIcon, Trash2 } from "lucide-react";
+import { Square, Circle as CircleIcon, Triangle, Hexagon, Type, ImageIcon, Trash2, Minus, Pentagon } from "lucide-react";
+import { SHAPE_DEFINITIONS, ShapeType } from "@/lib/constants/design";
 
 interface ToolbarProps {
   showShapesTool: boolean;
@@ -7,12 +8,21 @@ interface ToolbarProps {
   showImageTool: boolean;
   selectedObject: any;
   isLocked: boolean;
-  onAddRect: () => void;
-  onAddCircle: () => void;
+  forbiddenShapes: string[];
+  onAddShape: (shapeType: ShapeType) => void;
   onAddText: () => void;
   onAddImage: () => void;
   onDelete: () => void;
 }
+
+const shapeIcons: Record<ShapeType, React.ElementType> = {
+  rect: Square,
+  circle: CircleIcon,
+  triangle: Triangle,
+  ellipse: Pentagon,
+  polygon: Hexagon,
+  line: Minus,
+};
 
 export function Toolbar({
   showShapesTool,
@@ -20,48 +30,44 @@ export function Toolbar({
   showImageTool,
   selectedObject,
   isLocked,
-  onAddRect,
-  onAddCircle,
+  forbiddenShapes,
+  onAddShape,
   onAddText,
   onAddImage,
   onDelete,
 }: ToolbarProps) {
   const disabledClass = isLocked ? "opacity-50 cursor-not-allowed" : "";
 
+  const availableShapes = Object.keys(SHAPE_DEFINITIONS) as ShapeType[];
+
   return (
     <TooltipProvider>
       <div className="flex items-center gap-4 flex-wrap">
         {showShapesTool && (
           <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onAddRect}
-                  disabled={isLocked}
-                  className={`w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${disabledClass}`}
-                >
-                  <Square className="w-4 h-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Rectangle</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onAddCircle}
-                  disabled={isLocked}
-                  className={`w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${disabledClass}`}
-                >
-                  <CircleIcon className="w-4 h-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Circle</p>
-              </TooltipContent>
-            </Tooltip>
+            {availableShapes.map((shapeType) => {
+              const isForbidden = forbiddenShapes.includes(shapeType);
+              const Icon = shapeIcons[shapeType];
+              const definition = SHAPE_DEFINITIONS[shapeType];
+              
+              return (
+                <Tooltip key={shapeType}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => onAddShape(shapeType)}
+                      disabled={isLocked || isForbidden}
+                      className={`w-8 h-8 flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${disabledClass} ${isForbidden ? "opacity-30" : ""}`}
+                      title={isForbidden ? `${definition.label} not allowed` : definition.label}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isForbidden ? `${definition.label} (not allowed)` : definition.label}</p>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </>
         )}
 
