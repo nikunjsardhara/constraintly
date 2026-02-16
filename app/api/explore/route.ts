@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -27,7 +28,14 @@ export async function GET(request: NextRequest) {
       where.tags = { contains: tag, mode: "insensitive" };
     }
 
-    const sessions = await prisma.designSession.findMany({
+    type SessionWithRelations = Prisma.DesignSessionGetPayload<{
+      include: {
+        user: { select: { id: true; name: true; image: true } };
+        reactions: true;
+      };
+    }>;
+
+    const sessions: SessionWithRelations[] = await prisma.designSession.findMany({
       where,
       include: {
         user: { select: { id: true, name: true, image: true } },
